@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>GLIMTECH VR 2.0 - Bancada 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
+        canvas { display: block; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+        // 1. Configuração Básica
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x1a1a1a, 5, 15);
+        
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.5, 3);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0.5, 0);
+        controls.update();
+
+        // Iluminação
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(2, 5, 3);
+        scene.add(dirLight);
+
+        // 2. Construção dos Componentes da Bancada
+        const materiais = {
+            base: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
+            compressor: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.6 }),
+            filtro: new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.3, metalness: 0.8 }), // Amarelo
+            agua: new THREE.MeshPhysicalMaterial({ color: 0x0055ff, transparent: true, opacity: 0.3, transmission: 0.9, roughness: 0.1 }),
+            metal: new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5, metalness: 0.9 })
+        };
+
+        // Base Branca
+        const baseGeometry = new THREE.BoxGeometry(3, 0.05, 1.5);
+        const base = new THREE.Mesh(baseGeometry, materiais.base);
+        scene.add(base);
+
+        // Compressor (Centro)
+        const compGeometry = new THREE.CylinderGeometry(0.25, 0.25, 0.4, 32);
+        const compressor = new THREE.Mesh(compGeometry, materiais.compressor);
+        compressor.position.set(-0.2, 0.225, 0);
+        scene.add(compressor);
+
+        // Condensador (Traseira Esquerda)
+        const condGeometry = new THREE.BoxGeometry(0.8, 0.6, 0.1);
+        const condensador = new THREE.Mesh(condGeometry, materiais.metal);
+        condensador.position.set(-0.8, 0.35, -0.5);
+        scene.add(condensador);
+
+        // Filtro Secador (Lado do Compressor)
+        const filtroGeometry = new THREE.CylinderGeometry(0.04, 0.02, 0.2, 16);
+        const filtro = new THREE.Mesh(filtroGeometry, materiais.filtro);
+        filtro.position.set(-0.6, 0.2, 0.3);
+        filtro.rotation.z = Math.PI / 4;
+        scene.add(filtro);
+
+        // Recipiente de Água (Direita)
+        const tanqueGeometry = new THREE.CylinderGeometry(0.35, 0.35, 0.5, 32);
+        const tanque = new THREE.Mesh(tanqueGeometry, materiais.agua);
+        tanque.position.set(0.8, 0.275, 0);
+        scene.add(tanque);
+
+        // 3. Geometria das Tubagens (Curvas)
+        const tubos = [];
+        const particulas = [];
+        const clock = new THREE.Clock();
+
+        // Função auxiliar para criar tubos e as suas partículas
+        function criarCircuito(pontos, corHex, raio, numParticulas) {
+            const curva = new THREE.CatmullRomCurve3(pontos);
+            const geometria = new THREE.TubeGeometry(curva, 64, raio, 8, false);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: corHex, 
+                transparent: true, 
+                opacity: 0.4,
+                wireframe: true 
+            });
+            const mesh = new THREE.Mesh(geometria, material);
+            scene.add(mesh);
+
+            // Obter comprimento real da curva para normalizar a velocidade
+            const comprimento = curva.getLength();
+
+            // Adicionar partículas de fluxo
+            const esferaGeo = new THREE.SphereGeometry(raio * 1.5, 8, 8);
+            const esferaMat = new THREE.MeshBasicMaterial({ color: corHex });
+
+            for (let i = 0; i < numParticulas; i++) {
+                const particula = new THREE.Mesh(esferaGeo, esferaMat);
+                scene.add(particula);
+                particulas.push({
+                    mesh: particula,
+                    curva: curva,
+                    t: i / numParticulas,
+                    comprimento: comprimento // Guardado para cálculo de velocidade
+                });
+            }
+        }
+
+        // Descarga (Compressor -> Condensador) - Vermelho
+        criarCircuito([
+            new THREE.Vector3(-0.2, 0.4, 0),
+            new THREE.Vector3(-0.4, 0.5, -0.2),
+            new THREE.Vector3(-0.8, 0.6, -0.45)
+        ], 0xff0000, 0.015, 5);
+
+        // Linha de Líquido (Condensador -> Filtro) - Laranja
+        criarCircuito([
+            new THREE.Vector3(-0.8, 0.1, -0.45),
+            new THREE.Vector3(-0.7, 0.1, 0.1),
+            new THREE.Vector3(-0.65, 0.25, 0.25)
+        ], 0xff8800, 0.015, 4);
+
+        // Capilar (Filtro -> Evaporador) - Verde Amarelado
+        criarCircuito([
+            new THREE.Vector3(-0.55, 0.15, 0.35),
+            new THREE.Vector3(0.0, 0.1, 0.4),
+            new THREE.Vector3(0.5, 0.1, 0.3)
+        ], 0xccff00, 0.008, 6);
+
+        // Evaporador (Serpentina no Tanque) - Ciano
+        const pontosEspiral = [];
+        for (let i = 0; i <= 40; i++) {
+            const angulo = (i / 40) * Math.PI * 8; // 4 voltas
+            const raioEspiral = 0.36;
+            const y = 0.1 + (i / 40) * 0.3;
+            pontosEspiral.push(new THREE.Vector3(
+                0.8 + Math.cos(angulo) * raioEspiral,
+                y,
+                Math.sin(angulo) * raioEspiral
+            ));
+        }
+        criarCircuito(pontosEspiral, 0x00ffff, 0.015, 20);
+
+        // Sucção (Evaporador -> Compressor) - Azul
+        criarCircuito([
+            pontosEspiral[pontosEspiral.length - 1],
+            new THREE.Vector3(0.4, 0.4, -0.2),
+            new THREE.Vector3(0.0, 0.3, -0.1),
+            new THREE.Vector3(-0.1, 0.25, 0)
+        ], 0x0055ff, 0.02, 8);
+
+        // 4. Ciclo de Animação Corrigido
+        const VELOCIDADE_LINEAR = 0.2; // Unidades (metros virtuais) por segundo
+
+        renderer.setAnimationLoop(() => {
+            const delta = clock.getDelta();
+
+            // Atualiza as partículas normalizando pela distância da curva
+            particulas.forEach(p => {
+                // Ao dividir a velocidade linear pelo comprimento da curva, 
+                // a partícula move-se à mesma velocidade real em qualquer tubo
+                p.t += (VELOCIDADE_LINEAR / p.comprimento) * delta;
+                if (p.t > 1) p.t = 0;
+
+                const pos = p.curva.getPointAt(p.t);
+                p.mesh.position.copy(pos);
+            });
+
+            // Agitação térmica da água (pulsação de cor)
+            const tempo = clock.getElapsedTime();
+            tanque.material.opacity = 0.3 + Math.sin(tempo * 2) * 0.05;
+
+            controls.update();
+            renderer.render(scene, camera);
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
